@@ -102,7 +102,7 @@ install_docker() {
 clone_or_generate_repo() {
   mkdir -p "$APP_DIR"
   # If repo already looks present (docker-compose.yml), keep it
-  if [ -f "$APP_DIR/docker-compose.yml" ]; then
+  if [ -f "$APP_DIR/docker-compose.yml" ] || [ -f "$APP_DIR/docker-compose.yaml" ]; then
     log "Existing project found in $APP_DIR; using it."
     return 0
   fi
@@ -480,17 +480,36 @@ EOF
 }
 
 start_stack() {
-  cd "$APP_DIR"
+  # Ensure we are in the app directory
+  if ! cd "$APP_DIR"; then
+    err "Failed to change directory to $APP_DIR"
+    exit 1
+  fi
+
   # choose compose command
   if command -v docker-compose >/dev/null 2>&1; then
     COMPOSE_CMD="docker-compose"
-  else
+  elif docker compose version >/dev/null 2>&1; then
     COMPOSE_CMD="docker compose"
+  else
+    err "Docker Compose not found. Please install docker-compose or the docker compose plugin."
+    exit 1
   fi
 
-  log "Starting stack using: ${COMPOSE_CMD} up -d --build"
+  # Explicitly point to a compose file to avoid "no configuration file provided" errors
+  if [ -f docker-compose.yml ]; then
+    COMPOSE_FILES="-f docker-compose.yml"
+  elif [ -f docker-compose.yaml ]; then
+    COMPOSE_FILES="-f docker-compose.yaml"
+  else
+    err "No docker-compose.yml or docker-compose.yaml found in $APP_DIR. Aborting."
+    ls -la "$APP_DIR" || true
+    exit 1
+  fi
+
+  log "Starting stack using: ${COMPOSE_CMD} ${COMPOSE_FILES} up -d --build"
   # shellcheck disable=SC2086
-  $COMPOSE_CMD up -d --build
+  $COMPOSE_CMD $COMPOSE_FILES up -d --build
 
   log "Waiting up to ${DOCKER_COMPOSE_TIMEOUT}s for backend to respond..."
   local waited=0
